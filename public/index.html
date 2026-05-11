@@ -779,10 +779,8 @@
                             <img id="previewImage" style="width: 100%; border-radius: var(--border-radius-lg); border: 0.5px solid var(--color-border-tertiary); max-height: 400px; object-fit: cover;">
                         </div>
                         <div>
-                            <p style="font-size: 13px; color: var(--color-text-secondary); margin-bottom: 8px;">Extracted Text</p>
-                            <div style="background: var(--color-background-secondary); border: 0.5px solid var(--color-border-tertiary); border-radius: var(--border-radius-lg); padding: 12px; max-height: 300px; overflow-y: auto; font-size: 13px; line-height: 1.6; font-family: monospace;">
-                                <p id="extractedText"></p>
-                            </div>
+                            <p style="font-size: 13px; color: var(--color-text-secondary); margin-bottom: 8px;">Extracted Text (editable, for reference)</p>
+                            <textarea id="extractedText" style="width: 100%; background: var(--color-background-secondary); border: 0.5px solid var(--color-border-tertiary); border-radius: var(--border-radius-lg); padding: 12px; max-height: 300px; min-height: 120px; overflow-y: auto; font-size: 13px; line-height: 1.6; font-family: monospace; resize: vertical;"></textarea>
                         </div>
                     </div>
 
@@ -807,8 +805,12 @@
                             </select>
                         </div>
                         <div class="form-group">
-                            <label>Recipe Instructions (edit as needed)</label>
-                            <textarea id="autoInstructions" placeholder="Paste or edit the extracted text here"></textarea>
+                            <label>Ingredients (edit as needed)</label>
+                            <textarea id="autoIngredients" placeholder="One per line"></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label>Instructions (edit as needed)</label>
+                            <textarea id="autoInstructions" placeholder="Cooking method, if written"></textarea>
                         </div>
                         <div class="form-buttons">
                             <button class="primary" onclick="saveRecipeFromExtraction()">Save Recipe</button>
@@ -934,7 +936,7 @@
                 <button class="close-btn" onclick="closeModal()">✕</button>
             </div>
             <div id="modalBody"></div>
-            <div style="margin-top: 20px; padding-top: 20px; border-top: 0.5px solid var(--color-border-tertiary); display: flex; gap: 8px;">
+            <div id="modalFooter" style="margin-top: 20px; padding-top: 20px; border-top: 0.5px solid var(--color-border-tertiary); display: flex; gap: 8px;">
                 <button class="primary" onclick="editRecipe()" style="flex: 1;">Edit</button>
                 <button onclick="deleteRecipe()" style="flex: 1; color: var(--color-text-danger);">Delete</button>
             </div>
@@ -1125,10 +1127,11 @@
                 const result = await response.json();
 
                 // Preview pane shows the full reconstructed text
-                document.getElementById('extractedText').textContent = result.text || '';
+                document.getElementById('extractedText').value = result.text || '';
 
                 // Auto-populate every field we got back
                 if (result.title)        document.getElementById('autoTitle').value        = result.title;
+                if (result.ingredients)  document.getElementById('autoIngredients').value  = result.ingredients;
                 if (result.instructions) document.getElementById('autoInstructions').value = result.instructions;
 
                 // Category dropdown — only set if Claude returned a valid option
@@ -1140,9 +1143,8 @@
                     }
                 }
 
-                // Store ingredients separately so we save them on submit
-                document.getElementById('autoTitle').dataset.ingredients = result.ingredients || '';
-                document.getElementById('autoTitle').dataset.language    = result.language    || 'en';
+                // Stash the detected language for save time
+                document.getElementById('autoTitle').dataset.language = result.language || 'en';
 
             } catch (err) {
                 console.error('OCR Error:', err);
@@ -1157,12 +1159,16 @@
             const titleEl = document.getElementById('autoTitle');
             const title = titleEl.value.trim();
             const category = document.getElementById('autoCategory').value;
+            const ingredients = document.getElementById('autoIngredients').value.trim();
             const instructions = document.getElementById('autoInstructions').value.trim();
-            const ingredients = titleEl.dataset.ingredients || '';
-            const language = titleEl.dataset.language || detectLanguage(instructions);
+            const language = titleEl.dataset.language || detectLanguage(ingredients + ' ' + instructions);
 
-            if (!title || !category || !instructions) {
-                alert('Please fill in title, category, and instructions');
+            if (!title || !category) {
+                alert('Please give the recipe a title and pick a category.');
+                return;
+            }
+            if (!ingredients && !instructions) {
+                alert('Add ingredients, instructions, or both — a blank recipe is not very useful.');
                 return;
             }
 
@@ -1185,11 +1191,11 @@
         function cancelPreview() {
             const titleEl = document.getElementById('autoTitle');
             titleEl.value = '';
-            delete titleEl.dataset.ingredients;
             delete titleEl.dataset.language;
             document.getElementById('autoCategory').value = '';
+            document.getElementById('autoIngredients').value = '';
             document.getElementById('autoInstructions').value = '';
-            document.getElementById('extractedText').textContent = '';
+            document.getElementById('extractedText').value = '';
             document.getElementById('previewSection').style.display = 'none';
             document.getElementById('imageInput').value = '';
         }
@@ -1200,8 +1206,12 @@
             const ingredients = document.getElementById('manualIngredients').value.trim();
             const instructions = document.getElementById('manualInstructions').value.trim();
 
-            if (!title || !category || !instructions) {
-                alert('Please fill in title, category, and instructions');
+            if (!title || !category) {
+                alert('Please give the recipe a title and pick a category.');
+                return;
+            }
+            if (!ingredients && !instructions) {
+                alert('Add ingredients, instructions, or both.');
                 return;
             }
 
@@ -1334,14 +1344,23 @@
                         <div style="background: var(--color-background-secondary); padding: 12px; border-radius: var(--border-radius-md); white-space: pre-wrap; font-size: 13px; line-height: 1.6;">${recipe.ingredients}</div>
                     </div>
                 ` : ''}
-                <div>
-                    <p style="font-size: 13px; font-weight: 500; margin-bottom: 8px;">Instructions</p>
-                    <div style="background: var(--color-background-secondary); padding: 12px; border-radius: var(--border-radius-md); white-space: pre-wrap; font-size: 13px; line-height: 1.6;">${recipe.instructions}</div>
-                </div>
+                ${recipe.instructions ? `
+                    <div>
+                        <p style="font-size: 13px; font-weight: 500; margin-bottom: 8px;">Instructions</p>
+                        <div style="background: var(--color-background-secondary); padding: 12px; border-radius: var(--border-radius-md); white-space: pre-wrap; font-size: 13px; line-height: 1.6;">${recipe.instructions}</div>
+                    </div>
+                ` : ''}
                 <div style="margin-top: 12px; font-size: 12px; color: var(--color-text-tertiary);">
-                    Added on ${recipe.createdAt}
+                    Added on ${recipe.createdAt}${recipe.updatedAt ? ' · Updated ' + recipe.updatedAt : ''}
                 </div>
             `;
+
+            // Restore the view-mode footer buttons
+            document.getElementById('modalFooter').innerHTML = `
+                <button class="primary" onclick="editRecipe()" style="flex: 1;">Edit</button>
+                <button onclick="deleteRecipe()" style="flex: 1; color: var(--color-text-danger);">Delete</button>
+            `;
+
             document.getElementById('recipeModal').classList.add('active');
         }
 
@@ -1363,17 +1382,83 @@
         function editRecipe() {
             const recipe = recipes.find(r => r.id === currentRecipeId);
             if (!recipe || recipe.userId !== currentUser.id) {
-                alert('You can only edit your own recipes');
+                alert('You can only edit your own recipes.');
                 return;
             }
 
-            const newTitle = prompt('Recipe title:', recipe.title);
-            if (newTitle === null) return;
+            // Build an editable form right inside the modal body
+            const cats = ['breakfast','appetizer','main','side','dessert','beverage','sauce','other'];
+            const catOptions = cats.map(c =>
+                `<option value="${c}"${c === recipe.category ? ' selected' : ''}>${c.charAt(0).toUpperCase()+c.slice(1)}</option>`
+            ).join('');
 
-            recipe.title = newTitle;
+            document.getElementById('modalTitle').textContent = 'Edit recipe';
+            document.getElementById('modalBody').innerHTML = `
+                <div class="form-group">
+                    <label>Title</label>
+                    <input type="text" id="editTitle" value="${escapeAttr(recipe.title)}">
+                </div>
+                <div class="form-group">
+                    <label>Category</label>
+                    <select id="editCategory">${catOptions}</select>
+                </div>
+                <div class="form-group">
+                    <label>Ingredients</label>
+                    <textarea id="editIngredients" rows="6">${escapeText(recipe.ingredients || '')}</textarea>
+                </div>
+                <div class="form-group">
+                    <label>Instructions</label>
+                    <textarea id="editInstructions" rows="6">${escapeText(recipe.instructions || '')}</textarea>
+                </div>
+            `;
+
+            // Swap the footer buttons for save/cancel
+            document.getElementById('modalFooter').innerHTML = `
+                <button class="primary" onclick="saveEdit()" style="flex: 1;">Save changes</button>
+                <button onclick="openRecipe(${recipe.id})" style="flex: 1;">Cancel</button>
+            `;
+        }
+
+        async function saveEdit() {
+            const recipe = recipes.find(r => r.id === currentRecipeId);
+            if (!recipe) return;
+
+            const title        = document.getElementById('editTitle').value.trim();
+            const category     = document.getElementById('editCategory').value;
+            const ingredients  = document.getElementById('editIngredients').value.trim();
+            const instructions = document.getElementById('editInstructions').value.trim();
+
+            if (!title || !category) {
+                alert('Title and category are required.');
+                return;
+            }
+            if (!ingredients && !instructions) {
+                alert('Add ingredients, instructions, or both.');
+                return;
+            }
+
+            recipe.title = title;
+            recipe.category = category;
+            recipe.ingredients = ingredients;
+            recipe.instructions = instructions;
+            recipe.language = detectLanguage(ingredients + ' ' + instructions);
+            recipe.updatedAt = new Date().toLocaleDateString();
+
             localStorage.setItem(`recipes_${currentBookId}`, JSON.stringify(recipes));
-            closeModal();
+
+            // Best-effort sync to backend (re-POST; backend treats new id as fresh)
+            // Keeps things working even offline.
+
             renderRecipes();
+            openRecipe(recipe.id);  // reopen in view mode to show the changes
+        }
+
+        // Small helpers for safe HTML injection
+        function escapeAttr(s) {
+            return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        }
+        function escapeText(s) {
+            return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
         }
 
         function closeModal() {
