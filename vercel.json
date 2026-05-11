@@ -1,6 +1,8 @@
 {
   "outputDirectory": "public",
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/recipes.js" }
+    { "source": "/api/ocr",     "destination": "/api/ocr.js" },
+    { "source": "/api/recipes", "destination": "/api/recipes.js" },
+    { "source": "/api/recipes/(.*)", "destination": "/api/recipes.js" }
   ]
 }
