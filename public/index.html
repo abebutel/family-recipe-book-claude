@@ -9,7 +9,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="white">
     <meta name="apple-mobile-web-app-title" content="Recipe Book">
     <title>Family Recipe Book</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/4.1.1/tesseract.min.js"></script>
+    <!-- OCR handled server-side via Claude Vision -->
     <style>
         * {
             margin: 0;
@@ -1087,43 +1087,79 @@
             }
         }
 
-        function handleImageUpload(event) {
+        async function handleImageUpload(event) {
             const file = event.target.files[0];
             if (!file) return;
 
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                const image = e.target.result;
-                document.getElementById('previewImage').src = image;
-                document.getElementById('previewSection').style.display = 'block';
-                document.getElementById('processing').classList.add('active');
+            // Show preview immediately
+            const dataUrl = await new Promise(resolve => {
+                const reader = new FileReader();
+                reader.onload = e => resolve(e.target.result);
+                reader.readAsDataURL(file);
+            });
 
-                Tesseract.recognize(image, ['eng', 'heb']).then(({ data: { text } }) => {
-                    document.getElementById('extractedText').textContent = text;
-                    document.getElementById('autoInstructions').value = text;
-                    
-                    const lines = text.split('\n').filter(l => l.trim());
-                    if (lines.length > 0) {
-                        const firstLine = lines[0].trim();
-                        if (firstLine.length < 50) {
-                            document.getElementById('autoTitle').value = firstLine;
-                        }
-                    }
-                    
-                    document.getElementById('processing').classList.remove('active');
-                }).catch(err => {
-                    console.error('OCR Error:', err);
-                    document.getElementById('processing').classList.remove('active');
-                    alert('Error processing image. Please try again.');
+            document.getElementById('previewImage').src = dataUrl;
+            document.getElementById('previewSection').style.display = 'block';
+
+            const processingEl = document.getElementById('processing');
+            processingEl.querySelector('p').textContent = 'Reading recipe with Claude…';
+            processingEl.classList.add('active');
+
+            try {
+                // Strip data-URI prefix and detect media type
+                const [meta, base64] = dataUrl.split(',');
+                const mediaTypeMatch = meta.match(/data:([^;]+);/);
+                const mediaType = mediaTypeMatch ? mediaTypeMatch[1] : 'image/jpeg';
+
+                const response = await fetch('/api/ocr', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ image: base64, mediaType })
                 });
-            };
-            reader.readAsDataURL(file);
+
+                if (!response.ok) {
+                    const err = await response.json();
+                    throw new Error(err.error || 'OCR request failed');
+                }
+
+                const result = await response.json();
+
+                // Preview pane shows the full reconstructed text
+                document.getElementById('extractedText').textContent = result.text || '';
+
+                // Auto-populate every field we got back
+                if (result.title)        document.getElementById('autoTitle').value        = result.title;
+                if (result.instructions) document.getElementById('autoInstructions').value = result.instructions;
+
+                // Category dropdown — only set if Claude returned a valid option
+                if (result.category) {
+                    const catSelect = document.getElementById('autoCategory');
+                    const validCats = Array.from(catSelect.options).map(o => o.value);
+                    if (validCats.includes(result.category)) {
+                        catSelect.value = result.category;
+                    }
+                }
+
+                // Store ingredients separately so we save them on submit
+                document.getElementById('autoTitle').dataset.ingredients = result.ingredients || '';
+                document.getElementById('autoTitle').dataset.language    = result.language    || 'en';
+
+            } catch (err) {
+                console.error('OCR Error:', err);
+                alert('Could not extract text: ' + err.message + '\n\nYou can still type the recipe manually below.');
+            } finally {
+                processingEl.classList.remove('active');
+                processingEl.querySelector('p').textContent = 'Extracting text from image...';
+            }
         }
 
         async function saveRecipeFromExtraction() {
-            const title = document.getElementById('autoTitle').value.trim();
+            const titleEl = document.getElementById('autoTitle');
+            const title = titleEl.value.trim();
             const category = document.getElementById('autoCategory').value;
             const instructions = document.getElementById('autoInstructions').value.trim();
+            const ingredients = titleEl.dataset.ingredients || '';
+            const language = titleEl.dataset.language || detectLanguage(instructions);
 
             if (!title || !category || !instructions) {
                 alert('Please fill in title, category, and instructions');
@@ -1134,8 +1170,9 @@
                 id: Date.now(),
                 title,
                 category,
+                ingredients,
                 instructions,
-                language: detectLanguage(instructions),
+                language,
                 createdAt: new Date().toLocaleDateString()
             };
 
@@ -1146,7 +1183,10 @@
         }
 
         function cancelPreview() {
-            document.getElementById('autoTitle').value = '';
+            const titleEl = document.getElementById('autoTitle');
+            titleEl.value = '';
+            delete titleEl.dataset.ingredients;
+            delete titleEl.dataset.language;
             document.getElementById('autoCategory').value = '';
             document.getElementById('autoInstructions').value = '';
             document.getElementById('extractedText').textContent = '';
