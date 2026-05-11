@@ -2,12 +2,21 @@
   "name": "family-recipe-book",
   "version": "1.0.0",
   "description": "Shared family recipe digitizer app",
-  "main": "app.html",
   "scripts": {
-    "dev": "vercel dev",
-    "build": "echo 'Build complete'"
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
   },
-  "keywords": ["recipes", "family", "digitizer"],
+  "dependencies": {
+    "next": "^14.0.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "keywords": [
+    "recipes",
+    "family",
+    "digitizer"
+  ],
   "author": "",
   "license": "MIT"
 }
