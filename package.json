@@ -1,0 +1,13 @@
+{
+  "name": "family-recipe-book",
+  "version": "1.0.0",
+  "description": "Shared family recipe digitizer app",
+  "main": "app.html",
+  "scripts": {
+    "dev": "vercel dev",
+    "build": "echo 'Build complete'"
+  },
+  "keywords": ["recipes", "family", "digitizer"],
+  "author": "",
+  "license": "MIT"
+}
